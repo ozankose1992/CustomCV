@@ -95,10 +95,11 @@ class CustomCV @Since("1.2.0") (@Since("1.4.0") override val uid: String)
       foldMetrics
     }.transpose
 
+    // The metrics now is 2-D array (cross validation results per parameter configuration)
     metrics.zipWithIndex foreach {
       case (cvrs, idx) =>
-        println(s"Cross validation results for parameters ${epm(idx)}")
-        cvrs.zipWithIndex foreach {
+        println(s"Cross validation results for parameter configuration ${epm(idx)}")
+        cvrs.zipWithIndex foreach { // Print cross validation results for configuration
           case (cv, idx2) =>
             println(s"(${idx2}, ${cv})")
         }
