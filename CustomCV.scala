@@ -70,7 +70,7 @@ class CustomCV @Since("1.2.0") (@Since("1.4.0") override val uid: String)
     val metrics = splits.zipWithIndex.map { case ((training, validation), splitIndex) =>
       val trainingDataset = sparkSession.createDataFrame(training, schema).cache()
       val validationDataset = sparkSession.createDataFrame(validation, schema).cache()
-      println(s"Train split $splitIndex with multiple sets of parameters.")
+      instr.logDebug(s"Train split $splitIndex with multiple sets of parameters.")
 
       // Fit models in a Future for training in parallel
       val foldMetricFutures = epm.zipWithIndex.map { case (paramMap, paramIndex) =>
@@ -81,7 +81,7 @@ class CustomCV @Since("1.2.0") (@Since("1.4.0") override val uid: String)
           }
           // TODO: duplicate evaluator to take extra params from input
           val metric = eval.evaluate(model.transform(validationDataset, paramMap))
-          println(s"Got metric $metric for model trained with $paramMap.")
+          instr.logDebug(s"Got metric $metric for model trained with $paramMap.")
           metric
         } (executionContext)
       }
@@ -93,16 +93,26 @@ class CustomCV @Since("1.2.0") (@Since("1.4.0") override val uid: String)
       trainingDataset.unpersist()
       validationDataset.unpersist()
       foldMetrics
-    }.transpose.map(_.sum / $(numFolds)) // Calculate average metric over all splits
+    }.transpose
 
-    instr.logInfo(s"Average cross-validation metrics: ${metrics.toSeq}")
+    metrics.zipWithIndex foreach {
+      case (cvrs, idx) =>
+        println(s"Cross validation results for parameters ${epm(idx)}")
+        cvrs.zipWithIndex foreach {
+          case (cv, idx2) =>
+            println(s"(${idx2}, ${cv})")
+        }
+    }
+
+    val avg = metrics.map(_.sum / $(numFolds))
+    instr.logInfo(s"Average cross-validation metrics: ${avg.toSeq}")
     val (bestMetric, bestIndex) =
-      if (eval.isLargerBetter) metrics.zipWithIndex.maxBy(_._1)
-      else metrics.zipWithIndex.minBy(_._1)
+      if (eval.isLargerBetter) avg.zipWithIndex.maxBy(_._1)
+      else avg.zipWithIndex.minBy(_._1)
     instr.logInfo(s"Best set of parameters:\n${epm(bestIndex)}")
     instr.logInfo(s"Best cross-validation metric: $bestMetric.")
     val bestModel = est.fit(dataset, epm(bestIndex)).asInstanceOf[Model[_]]
-    copyValues(new CrossValidatorModel(uid, bestModel, metrics)
+    copyValues(new CrossValidatorModel(uid, bestModel, avg)
       .setSubModels(subModels).setParent(this))
   }
 }
